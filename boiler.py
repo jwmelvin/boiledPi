@@ -119,7 +119,7 @@ def configRead():
     if flagGarage != cfgParser.getboolean('STATE', 'enable_garage'):
         flagGarage = cfgParser.getboolean('STATE', 'enable_garage')
         logger.info('Config changed: enable_garage {0}'.format(flagGarage))
-        pubAiO(AIO_FEED_STATUS,'config file: Garage enable = '.format(flagGarage))
+        pubAIO(AIO_FEED_STATUS,'config file: Garage enable = '.format(flagGarage))
         if flagGarage:
             pubAIO(AIO_FEED_ENABLE_G,'ON')
         else:
@@ -260,39 +260,39 @@ def publish_temps():
             pass
     secPublishTempLast = time()
 
-def publish_temps_REST():
-    global secPublishTempLast
-    if len(ID_BOILER_SUPPLY)>0 and isinstance(tempBoilerSupply,float):
-        try:
-            aioREST.send(AIO_FEED_TEMP_BS,tempBoilerSupply)
-        except:
-            logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_BS))
-            pass
-    if len(ID_BOILER_RETURN)>0 and isinstance(tempBoilerReturn,float):
-        try:
-            aioREST.send(AIO_FEED_TEMP_BR,tempBoilerReturn)
-        except:
-            logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_BR))
-            pass
-    if len(ID_GARAGE_AIR)>0 and isinstance(tempGarageAir,float):
-        try:
-            aioREST.send(AIO_FEED_TEMP_GA,tempGarageAir)
-        except:
-            logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GA))
-            pass
-    if len(ID_GARAGE_SUPPLY)>0 and isinstance(tempGarageSupply,float):
-        try:
-            aioREST.send(AIO_FEED_TEMP_GS,tempGarageSupply)
-        except:
-            logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GS))
-            pass
-    if len(ID_GARAGE_RETURN)>0 and isinstance(tempGarageReturn,float):
-        try:
-            aioREST.send(AIO_FEED_TEMP_GR,tempGarageReturn)
-        except:
-            logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GR))
-            pass
-    secPublishTempLast = time()
+# def publish_temps_REST():
+#     global secPublishTempLast
+#     if len(ID_BOILER_SUPPLY)>0 and isinstance(tempBoilerSupply,float):
+#         try:
+#             aioREST.send(AIO_FEED_TEMP_BS,tempBoilerSupply)
+#         except:
+#             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_BS))
+#             pass
+#     if len(ID_BOILER_RETURN)>0 and isinstance(tempBoilerReturn,float):
+#         try:
+#             aioREST.send(AIO_FEED_TEMP_BR,tempBoilerReturn)
+#         except:
+#             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_BR))
+#             pass
+#     if len(ID_GARAGE_AIR)>0 and isinstance(tempGarageAir,float):
+#         try:
+#             aioREST.send(AIO_FEED_TEMP_GA,tempGarageAir)
+#         except:
+#             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GA))
+#             pass
+#     if len(ID_GARAGE_SUPPLY)>0 and isinstance(tempGarageSupply,float):
+#         try:
+#             aioREST.send(AIO_FEED_TEMP_GS,tempGarageSupply)
+#         except:
+#             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GS))
+#             pass
+#     if len(ID_GARAGE_RETURN)>0 and isinstance(tempGarageReturn,float):
+#         try:
+#             aioREST.send(AIO_FEED_TEMP_GR,tempGarageReturn)
+#         except:
+#             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GR))
+#             pass
+#     secPublishTempLast = time()
 
 def rrd_temps():
     global secRRDTempLast
@@ -343,7 +343,7 @@ def read_temps():
     if len(ID_GARAGE_RETURN)>0:
         tempGarageReturn = readTemp(ID_GARAGE_RETURN)
     if len(ID_OUTSIDE_AIR)>0:
-        tempOutsideAir = readTEmp(ID_OUTSIDE_AIR)
+        tempOutsideAir = readTemp(ID_OUTSIDE_AIR)
 
 def aio_connected(client):
     # called when the client is connected to Adafruit IO.
