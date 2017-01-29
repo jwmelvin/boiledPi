@@ -68,7 +68,7 @@ def configRead():
     global IFTTT_KEY, IFTTT_EVENT 
     global ID_PROBE, ID_BOILER_RETURN, ID_BOILER_SUPPLY
     global ID_GARAGE_SUPPLY, ID_GARAGE_RETURN, ID_GARAGE_AIR
-    global ID_OUTSIDE_AIR   
+    global ID_OUTSIDE_AIR, ID_BATH_SUPPLY   
     global AIO_KEY, AIO_USERNAME        
     global AIO_FEED_TEMP_BS, AIO_FEED_TEMP_BR    
     global AIO_FEED_TEMP_GA, AIO_FEED_TEMP_GS, AIO_FEED_TEMP_GR    
@@ -104,6 +104,7 @@ def configRead():
     ID_PROBE         = cfg['id_probe'] # '28.F542E1020000'
     ID_BOILER_RETURN = cfg['id_boiler_return'] # '28.13FBCE030000'
     ID_BOILER_SUPPLY = cfg['id_boiler_supply'] # ''
+    ID_BATH_SUPPLY = cfg['id_bath_supply'] # ''
     ID_GARAGE_SUPPLY = cfg['id_garage_supply'] # ''
     ID_GARAGE_RETURN = cfg['id_garage_return'] # ''
     ID_GARAGE_AIR    = cfg['id_garage_air'] # '28.00E639040000' 
@@ -242,31 +243,26 @@ def publish_temps():
             aio.publish(AIO_FEED_TEMP_BS,tempBoilerSupply)
         except:
             logger.warning('failure to publish {0}'.format(AIO_FEED_TEMP_BS))
-            pass
     if len(ID_BOILER_RETURN)>0 and isinstance(tempBoilerReturn,float):
         try:
             aio.publish(AIO_FEED_TEMP_BR,tempBoilerReturn)
         except:
             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_BR))
-            pass
     if len(ID_GARAGE_AIR)>0 and isinstance(tempGarageAir,float):
         try:
             aio.publish(AIO_FEED_TEMP_GA,tempGarageAir)
         except:
             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GA))
-            pass
     if len(ID_GARAGE_SUPPLY)>0 and isinstance(tempGarageSupply,float):
         try:
             aio.publish(AIO_FEED_TEMP_GS,tempGarageSupply)
         except:
             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GS))
-            pass
     if len(ID_GARAGE_RETURN)>0 and isinstance(tempGarageReturn,float):
         try:
             aio.publish(AIO_FEED_TEMP_GR,tempGarageReturn)
         except:
             logger.warning('Warning: failure to publish {0}'.format(AIO_FEED_TEMP_GR))
-            pass
     
 def rrd_temps():
     if len(ID_BOILER_SUPPLY)>0 and isinstance(tempBoilerSupply,float):
@@ -279,6 +275,11 @@ def rrd_temps():
             rrdtool.update('--daemon','192.168.1.75','temp_BR.rrd','N:%s' %(tempBoilerReturn))
         except:
             logger.warning('Warning: failure to update rrd tempBoilerReturn')
+    if len(ID_BATH_SUPPLY)>0 and isinstance(tempBathSupply,float):
+        try:
+            rrdtool.update('--daemon','192.168.1.75','temp_BaS.rrd','N:%s' %(tempBathSupply))
+        except:
+            logger.warning('failure to update rrd tempBathSupply')
     if len(ID_GARAGE_AIR)>0 and isinstance(tempGarageAir,float):
         try:
             rrdtool.update('--daemon','192.168.1.75','temp_GA.rrd','N:%s' %(tempGarageAir))
@@ -296,19 +297,21 @@ def rrd_temps():
             logger.warning('Warning: failure to update rrd tempGarageReturn')
     if len(ID_OUTSIDE_AIR)>0 and isinstance(tempOutsideAir,float):
         try:
-            rrdtool.update('--daemon','192.168.1.75','temp_GR.rrd','N:%s' %(tempOutsideAir))
+            rrdtool.update('--daemon','192.168.1.75','temp_OA.rrd','N:%s' %(tempOutsideAir))
         except:
-            logger.warning('Warning: failure to update rrd tempGarageReturn')    
+            logger.warning('Warning: failure to update rrd tempOutsideAir')    
         
 
 def read_temps():
     global tempBoilerSupply, tempBoilerReturn 
     global tempGarageAir, tempGarageSupply, tempGarageReturn
-    global tempOutsideAir
+    global tempOutsideAir, tempBathSupply
     if len(ID_BOILER_SUPPLY)>0:
         tempBoilerSupply = readTemp(ID_BOILER_SUPPLY)
     if len(ID_BOILER_RETURN)>0:
         tempBoilerReturn = readTemp(ID_BOILER_RETURN)
+    if len(ID_BATH_SUPPLY)>0:
+        tempBathSupply = readTemp(ID_BATH_SUPPLY)
     if len(ID_GARAGE_AIR)>0:
         tempGarageAir = readTemp(ID_GARAGE_AIR)
     if len(ID_GARAGE_SUPPLY)>0:
