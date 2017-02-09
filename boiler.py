@@ -2,7 +2,7 @@ from gpiozero import LED, Button
 from pyownet import protocol
 from time import sleep, time
 # import datetime
-from Adafruit_IO import MQTTClient, Client
+from Adafruit_IO import MQTTClient
 import pyfttt
 import rrdtool
 #import sys
@@ -26,6 +26,7 @@ secStartBedroomsPump = 0
 secReadTempsLast = 0
 secPublishTempLast = 0
 secPublishStatusLast = 0
+secNotifyGarageTempLast = 0
 secRRDTempLast = 0
 secCheckConfigLast = 0
 secConfigFile = 0
@@ -65,6 +66,7 @@ def configRead():
     global secPreheatBedrooms, secPurgeBedroomsPump, secPurgeBedroomsFan
     global hrExercise, secUpdate, secPublishTempLoop, secRRDTempLoop
     global secPublishStatusLoop, secConfigCheckLoop, secReadTempsLoop
+    global secNotifyGarageTempTimeout
     global IFTTT_KEY, IFTTT_EVENT 
     global ID_PROBE, ID_BOILER_RETURN, ID_BOILER_SUPPLY
     global ID_GARAGE_SUPPLY, ID_GARAGE_RETURN, ID_GARAGE_AIR
@@ -99,6 +101,7 @@ def configRead():
     secPublishTempLoop = float(cfg['secpublishtemploop'])
     secPublishStatusLoop = float(cfg['secpublishstatusloop'])
     secConfigCheckLoop = float(cfg['secconfigcheckloop'])
+    secNotifyGarageTempTimeout = float(cfg['secNotifyGarageTempTimeout'])
     IFTTT_KEY = cfg['ifttt_key'] #dMU6-1cYu6tDnxg91rl6F5'
     IFTTT_EVENT  = cfg['ifttt_event'] # 'boiler'
     ID_PROBE         = cfg['id_probe'] # '28.F542E1020000'
@@ -412,10 +415,27 @@ if __name__ == '__main__':
     aio.connect()
     aio.loop_background()
     
+    try:
+        pyfttt.send_event(IFTTT_KEY,IFTTT_EVENT,'Boiler service started')
+    except:
+        logger.error('error sending IFTTT startup message')
+
     while True:
         secStartLoop = time()
         if time() - secReadTempsLast  > secReadTempsLoop:
             read_temps()
+            if not isinstance(tempGarageAir, float):
+                logger.error('unknown Garage temperature')
+                if time() - secNotifyGarageTempLast > secNotifyGarageTempTimeout:
+                    try:
+                        pyfttt.send_event(IFTTT_KEY,IFTTT_EVENT,'unknown Garage temperature')
+                    except:
+                        logger.error('error sending IFTTT message')
+                    try:
+                        pubAIO(AIO_FEED_STATUS,'unknown Garage temperature')
+                    except:
+                        logger.error('error sending AIO message')
+                    secNotifyGarageTempLast = time()
             secReadTempsLast = time()
         garageCheck()
         bathroomsCheck()
@@ -502,17 +522,9 @@ if __name__ == '__main__':
                             outGaragePump.off()
                         if time() - secStopCallGarage > secPurgeGarageFan:
                             outGarageFan.off()
-                else:
-                    logger.error('unknown Garage temperature')
-                    pubAIO(AIO_FEED_STATUS,'unknown Garage temperature')
-                    try:
-                        pyfttt.send_event(IFTTT_KEY,IFTTT_EVENT,'unknown Garage temperature')
-                    except:
-                        logger.error('error sending IFTTT message')
-                        
         elif flagRun:
             manualOps()
-        if time() - secPublishTempLast  > secPublishTempLoop:
+        if secPublishStatusLoop > 0 and time() - secPublishTempLast  > secPublishTempLoop:
             publish_temps()
             secPublishTempLast = time()
         if secPublishStatusLoop > 0 and time() - secPublishStatusLast  > secPublishStatusLoop:
