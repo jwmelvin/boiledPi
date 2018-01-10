@@ -2,7 +2,6 @@ from gpiozero import LED, Button
 from pyownet import protocol
 from time import sleep, time
 # import datetime
-from Adafruit_IO import MQTTClient
 import pyfttt
 import rrdtool
 #import sys
@@ -11,6 +10,7 @@ import configparser
 import os
 
 flagRun = True
+flagWasRunning = True
 flagManual = False
 flagGarage = True
 flagGarageProtect = False
@@ -24,7 +24,6 @@ secStartGaragePump = 0
 secStopGaragePump = 0
 secStartBedroomsPump = 0
 secReadTempsLast = 0
-secPublishStatusLast = 0
 secNotifyGarageTempLast = 0
 secRRDTempLast = 0
 secCheckConfigLast = 0
@@ -50,22 +49,6 @@ outMBaRecirc = LED(24)
 inCallBedrooms = Button(8, bounce_time=0.02)
 inCallBathrooms = Button(7, bounce_time=0.02)
 
-def pubAIO(feed,message):
-    try:
-        aio.publish(feed,message)
-    except:
-        logger.warning('failure to publish {0}'.format(AIO_FEED_STATUS))
-
-def configReadAIO():
-    global AIO_KEY, AIO_USERNAME        
-    global AIO_FEED_SP_G, AIO_FEED_ENABLE_G, AIO_FEED_STATUS
-    cfgParser.read('/home/pi/boiler.config')
-    AIO_KEY              = cfgParser.get('DEFAULT','aio_key') # '462a14a808df4619840d228fcf49e7a8'
-    AIO_USERNAME         = cfgParser.get('DEFAULT','aio_username') # 'jwmelvin'
-    AIO_FEED_SP_G        = cfgParser.get('DEFAULT','aio_feed_sp_g') # 'setpoint-garage'
-    AIO_FEED_ENABLE_G    = cfgParser.get('DEFAULT','aio_feed_enable_g') # 'enable-garage'
-    AIO_FEED_STATUS      = cfgParser.get('DEFAULT','aio_feed_status') # 'status-report'
-
 def configRead():
     global flagGarage, flagRun
     global tempBoilerReturnMin, tempBoilerReturnMinGarage, deadbandBoiler
@@ -73,8 +56,8 @@ def configRead():
     global secGarageProtectColdOn, secGarageProtectColdOff, secGarageProtectHotOn, secGarageProtectHotOff
     global secPreheatGarage, secPurgeGaragePump, secPurgeGarageFan
     global secPreheatBedrooms, secPurgeBedroomsPump, secPurgeBedroomsFan
-    global hrExercise, secUpdate, secPublishTempLoop, secRRDTempLoop
-    global secPublishStatusLoop, secConfigCheckLoop, secReadTempsLoop
+    global hrExercise, secUpdate, secRRDTempLoop
+    global secConfigCheckLoop, secReadTempsLoop
     global secNotifyGarageTempTimeout
     global IFTTT_KEY, IFTTT_EVENT 
     global ID_PROBE, ID_BOILER_RETURN, ID_BOILER_SUPPLY
@@ -102,8 +85,6 @@ def configRead():
     secUpdate = float(cfg['secupdate'])
     secReadTempsLoop = float(cfg['secReadTempsLoop'])
     secRRDTempLoop = float(cfg['secrrdtemploop'])
-    secPublishTempLoop = float(cfg['secpublishtemploop'])
-    secPublishStatusLoop = float(cfg['secpublishstatusloop'])
     secConfigCheckLoop = float(cfg['secconfigcheckloop'])
     secNotifyGarageTempTimeout = float(cfg['secNotifyGarageTempTimeout'])
     IFTTT_KEY = cfg['ifttt_key'] #dMU6-1cYu6tDnxg91rl6F5'
@@ -119,16 +100,12 @@ def configRead():
     if flagGarage != cfgParser.getboolean('STATE', 'enable_garage'):
         flagGarage = cfgParser.getboolean('STATE', 'enable_garage')
         logger.info('Config changed: enable_garage {0}'.format(flagGarage))
-        pubAIO(AIO_FEED_STATUS,'config file: Garage enable = '.format(flagGarage))
-        if flagGarage:
-            pubAIO(AIO_FEED_ENABLE_G,'ON')
-        else:
-            pubAIO(AIO_FEED_ENABLE_G,'OFF')
     if setpointGarage != cfgParser.getfloat('STATE','setpointgarage'):
         setpointGarage = cfgParser.getfloat('STATE','setpointgarage')
         logger.info('Config changed: setpointGarage, now {0}'.format(setpointGarage))
-        pubAIO(AIO_FEED_SP_G, setpointGarage)
-        pubAIO(AIO_FEED_STATUS,'config file: Garage setpoint = '.format(setpointGarage))
+    if flagRun != cfgParser.getboolean('STATE','enable_overall'):
+        flagRun = cfgParser.getboolean('STATE','enable_overall')
+        logger.info('Config changed: enable_overall {0}'.format(flagRun))
 
 def checkConfig():
     global secConfigFile
@@ -136,7 +113,6 @@ def checkConfig():
         secConfigFile = os.path.getmtime('/home/pi/boiler.config')
         configRead()
         logger.info('updated parameters from config file')
-        pubAIO(AIO_FEED_STATUS,'updated parameters from config file')
 
 def readTemp(target):
     try:
@@ -177,18 +153,15 @@ def garageCheck():
             if not callGarage:
                 logger.debug('call Garage')
                 callGarage = True
-                pubAIO(AIO_FEED_STATUS,'call Garage')
         elif tempGarageAir > setpointGarage + deadbandGarage/2:
             if callGarage:
                 secStopCallGarage = time()
                 logger.debug('uncall Garage')
-                pubAIO(AIO_FEED_STATUS,'uncall Garage')
             callGarage = False
     else:
         if callGarage:
             secStopCallGarage = time()
             logger.debug('disabling Garage')
-            pubAIO(AIO_FEED_STATUS,'disabling Garage')
         callGarage = False
 
 
@@ -197,12 +170,10 @@ def bathroomsCheck():
     if inCallBathrooms.is_pressed:
         if not callBathrooms:
             logger.debug('call Bathrooms')
-            pubAIO(AIO_FEED_STATUS,'call Bathrooms')
         callBathrooms = True
     else:
         if callBathrooms:
             logger.debug('uncall Bathrooms')
-            pubAIO(AIO_FEED_STATUS,'uncall Bathrooms')
         callBathrooms = False
 
 def bedroomsCheck():
@@ -210,21 +181,13 @@ def bedroomsCheck():
     if inCallBedrooms.is_pressed:
         if not callBedrooms:
             logger.debug('call Bedrooms')
-            pubAIO(AIO_FEED_STATUS,'call Bedrooms')
         callBedrooms = True
     else:
         if callBedrooms:
             secStopCallBedrooms = time()
             logger.debug('uncall Bedrooms')
-            pubAIO(AIO_FEED_STATUS,'uncall Bedrooms')
         callBedrooms = False
 
-def publish_status():
-    try:
-        aio.publish(AIO_FEED_STATUS,'spG: {0}, runG: {1}'.format(setpointGarage,flagGarage))
-    except:
-        logger.warning('failure to publish {0}'.format(AIO_FEED_STATUS))
-    
 def rrd_temps():
     if len(ID_BOILER_SUPPLY)>0 and isinstance(tempBoilerSupply,float):
         try:
@@ -260,8 +223,7 @@ def rrd_temps():
         try:
             rrdtool.update('--daemon','192.168.1.75','temp_OA.rrd','N:%s' %(tempOutsideAir))
         except:
-            logger.warning('Warning: failure to update rrd tempOutsideAir')    
-        
+            logger.warning('Warning: failure to update rrd tempOutsideAir')
 
 def read_temps():
     global tempBoilerSupply, tempBoilerReturn 
@@ -282,44 +244,6 @@ def read_temps():
     if len(ID_OUTSIDE_AIR)>0:
         tempOutsideAir = readTemp(ID_OUTSIDE_AIR)
 
-def aio_connected(client):
-    # called when the client is connected to Adafruit IO.
-    # This is a good place to subscribe to feed changes.  The client parameter
-    # passed to this function is the Adafruit IO MQTT client so you can make
-    # calls against it easily.
-    logger.info('Connected to Adafruit IO!  Listening...')
-    # Subscribe to changes on desired feeds
-    try:
-        client.subscribe(AIO_FEED_SP_G)
-    except:
-        logger.error('subscribing to {0}'.format(AIO_FEED_SP_G))
-    try:
-        client.subscribe(AIO_FEED_ENABLE_G)
-    except:
-        logger.error('subscribing to {0}'.format(AIO_FEED_ENABLE_G))    
-
-def aio_disconnected(client):
-    # Disconnected function will be called when the client disconnects.
-    logger.error('Disconnected from Adafruit IO!')
-    #sys.exit(1)
-
-def aio_message(client, feed_id, payload):
-    global flagRun, setpointGarage, flagGarage
-    # Message function will be called when a subscribed feed has a new value.
-    # The feed_id parameter identifies the feed, and the payload parameter has
-    # the new value.
-    logger.info('Feed {0} received new value: {1}'.format(feed_id, payload))
-    if feed_id == 'setpoint-garage':
-        setpointGarage = float(payload)
-        pubAIO(AIO_FEED_STATUS,'garage setpoint now {0}'.format(setpointGarage))
-    if feed_id == 'enable-garage':
-        if payload == 'ON':
-            flagGarage = True
-            pubAIO(AIO_FEED_STATUS,'garage heat ON')
-        elif payload == 'OFF':
-            flagGarage = False
-            pubAIO(AIO_FEED_STATUS,'garage heat OFF')
-
 def manualOps():
         global flagManual
         if not flagManual:
@@ -328,7 +252,6 @@ def manualOps():
             except:
                 logger.error('error sending IFTTT message')
             flagManual = True
-            pubAIO(AIO_FEED_STATUS,'entered Manual mode')
         if callBedrooms or callBathrooms:
             outBoiler.on()
         else:
@@ -339,7 +262,7 @@ def manualOps():
         else:
             outBedroomsPump.off()
             outBedroomsFan.off()
-        
+
         if callBathrooms:
             outBathroomsPump.on()
         else:
@@ -347,18 +270,20 @@ def manualOps():
         outGaragePump.blink(secGarageProtectHotOn, secGarageProtectHotOff)
         outGarageFan.off()
 
+def stopAll():
+    global flagWasRunning
+    flagWasRunning = False
+    logger.info('stopped all outputs')
+    outBoiler.off()
+    outBedroomsPump.off()
+    outBedroomsFan.off()
+    outBathroomsPump.off()
+    outGaragePump.off()
+    outGarageFan.off()
+
 if __name__ == '__main__':
     ow = protocol.proxy()
     cfgParser=configparser.ConfigParser()
-    
-    configReadAIO()
-    aio = MQTTClient(AIO_USERNAME, AIO_KEY)
-    aio.on_connect    = aio_connected
-    aio.on_disconnect = aio_disconnected
-    aio.on_message    = aio_message
-    aio.connect()
-    aio.loop_background()
-    
     configRead()
     
     try:
@@ -377,10 +302,6 @@ if __name__ == '__main__':
                         pyfttt.send_event(IFTTT_KEY,IFTTT_EVENT,'unknown Garage temperature')
                     except:
                         logger.error('error sending IFTTT message')
-                    try:
-                        pubAIO(AIO_FEED_STATUS,'unknown Garage temperature')
-                    except:
-                        logger.error('error sending AIO message')
                     secNotifyGarageTempLast = time()
             secReadTempsLast = time()
         garageCheck()
@@ -393,26 +314,26 @@ if __name__ == '__main__':
                 except:
                     logger.error('error sending IFTTT message')
                 flagManual = False
-                pubAIO(AIO_FEED_STATUS,'entered Automatic mode')
-                
+
             if callBedrooms or callBathrooms or callGarage:
                 outBoiler.on()
             else:
                 outBoiler.off()
-            
+
             if tempBoilerReturn < tempBoilerReturnMin - deadbandBoiler/2:
                 outBedroomsPump.off()
                 outBedroomsFan.off()
                 outBathroomsPump.off()
-                outGaragePump.off()
+                if not flagGarageProtect:
+                    outGaragePump.off()
                 outGarageFan.off()
             else:
                 if callBedrooms:
                     if tempBoilerReturn > tempBoilerReturnMin + deadbandBoiler/2:
                         if not outBedroomsPump.is_active:
                             secStartBedroomsPump = time()
-                        outBedroomsPump.on()                    
-                    
+                        outBedroomsPump.on()
+
                     if time() - secStartBedroomsPump > secPreheatBedrooms:
                         outBedroomsFan.on()
                 else:
@@ -420,13 +341,13 @@ if __name__ == '__main__':
                         outBedroomsPump.off()
                     if time() - secStopCallBedrooms > secPurgeBedroomsFan:
                         outBedroomsFan.off()
-                        
+
                 if callBathrooms:
                     if tempBoilerReturn > tempBoilerReturnMin + deadbandBoiler/2:
                         outBathroomsPump.on()
                 else:
                     outBathroomsPump.off()
-                
+
                 if callGarage:
                     if (not callBedrooms) and \
                         (tempBoilerReturn > tempBoilerReturnMin + deadbandBoiler/2):
@@ -439,40 +360,40 @@ if __name__ == '__main__':
                         outGaragePump.on()
                     if time() - secStartGaragePump > secPreheatGarage:
                         outGarageFan.on()
-                elif isinstance(tempGarageAir, float): 
-                    if tempGarageAir < tempFreezeProtect:
-                        if not flagGarageProtect:
-                            flagGarageProtect = True
-                            pubAIO(AIO_FEED_STATUS,'Garage freeze protect started')
-                            logger.info('Garage freeze protect started')
-                        if tempBoilerReturn < tempBoilerReturnMin or not outBoiler.is_active:
-                            secOn = secGarageProtectColdOn
-                            secOff = secGarageProtectColdOff
-                        else:
-                            secOn = secGarageProtectHotOn
-                            secOff = secGarageProtectHotOff
-                        if outGaragePump.is_active:
-                            if time() - secStartGaragePump > secOn:
-                                outGaragePump.off()
-                                secStopGaragePump = time()
-                        else:
-                            if time() - secStopGaragePump > secOff:
-                                outGaragePump.on()
-                                secStartGaragePump = time()
+                else:
+                    if time() - secStopCallGarage > secPurgeGaragePump and not flagGarageProtect:
+                        outGaragePump.off()
+                    if time() - secStopCallGarage > secPurgeGarageFan and outGarageFan.is_active:
+                        outGarageFan.off()
+            if isinstance(tempGarageAir, float):
+                if tempGarageAir < tempFreezeProtect:
+                    if not flagGarageProtect:
+                        flagGarageProtect = True
+                        logger.info('Garage freeze protect started')
+                    if tempBoilerReturn < tempBoilerReturnMin or not outBoiler.is_active:
+                        secOn = secGarageProtectColdOn
+                        secOff = secGarageProtectColdOff
                     else:
-                        if flagGarageProtect:
-                            flagGarageProtect = False
-                            pubAIO(AIO_FEED_STATUS,'Garage freeze protect ended')
-                            logger.info('Garage freeze protect ended')
-                        if time() - secStopCallGarage > secPurgeGaragePump:
+                        secOn = secGarageProtectHotOn
+                        secOff = secGarageProtectHotOff
+                    if outGaragePump.is_active:
+                        if time() - secStartGaragePump > secOn:
                             outGaragePump.off()
-                        if time() - secStopCallGarage > secPurgeGarageFan:
-                            outGarageFan.off()
+                            logger.debug('freezeProtect stop')
+                            secStopGaragePump = time()
+                    else:
+                        if time() - secStopGaragePump > secOff:
+                            outGaragePump.on()
+                            secStartGaragePump = time()
+                            logger.debug('freezeProtect run')
+                elif tempGarageAir > tempFreezeProtect + 2:
+                    if flagGarageProtect:
+                        flagGarageProtect = False
+                        logger.info('Garage freeze protect ended')
         elif flagRun:
             manualOps()
-        if secPublishStatusLoop > 0 and time() - secPublishStatusLast  > secPublishStatusLoop:
-            publish_status()
-            secPublishStatusLast = time()
+        elif flagWasRunning:
+            stopAll()
         if time () - secRRDTempLast > secRRDTempLoop:
             rrd_temps() 
             secRRDTempLast = time()
